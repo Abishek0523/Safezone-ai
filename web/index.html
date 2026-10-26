@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SafeZone AI (build 3)</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css">
+<style>
+.darktiles{filter:invert(1) hue-rotate(200deg) brightness(.85) contrast(.95)}
+:root{--bg:#070b1a;--panel:rgba(18,25,52,.72);--line:rgba(120,140,255,.22);--txt:#e8ecff;--mute:#9aa6d6;--blue:#3d8bff;--purple:#9b5cff;--red:#ff3b5c;--orange:#ff9f1c;--yellow:#ffd23f;--gray:#8b93a8;--green:#2ecf8a}
+*{box-sizing:border-box}html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--txt);font:15px/1.45 "Bahnschrift","Segoe UI",system-ui,sans-serif;display:grid;grid-template-rows:auto 1fr}
+button,select,input,textarea{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+nav{display:flex;gap:6px;align-items:center;padding:10px 16px;border-bottom:1px solid var(--line);background:#0a1030}
+.logo{font-weight:700;font-size:18px;margin-right:auto;background:linear-gradient(90deg,var(--blue),var(--purple));-webkit-background-clip:text;background-clip:text;color:transparent}
+nav button,.btn{background:transparent;border:1px solid transparent;border-radius:10px;padding:7px 12px;cursor:pointer}
+nav button:hover{border-color:var(--line)}
+.btn{background:linear-gradient(90deg,var(--blue),var(--purple));border:0;font-weight:600}
+.btn.alt{background:transparent;border:1px solid var(--line)}
+main{display:grid;grid-template-columns:270px 1fr 320px;min-height:0}
+.side{background:var(--panel);backdrop-filter:blur(14px);padding:14px;overflow:auto;display:flex;flex-direction:column;gap:12px}
+.side h3{margin:4px 0 0;font-size:14px;color:var(--mute);font-weight:600}
+.side input[type=search],.side select,.dlg input,.dlg select,.dlg textarea{width:100%;background:#0d1433;border:1px solid var(--line);border-radius:10px;padding:8px}
+label.chk{display:flex;gap:8px;align-items:center}
+#map{background:#0b1230;min-height:300px;position:relative;z-index:0}
+.leaflet-container{font:inherit}
+.pin{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;font-size:15px;border:2px solid #fff3;box-shadow:0 0 14px var(--c),0 0 4px var(--c) inset;background:#0b1230cc}
+.card{border:1px solid var(--line);border-left:4px solid var(--c,var(--gray));border-radius:10px;padding:9px 10px;cursor:pointer;background:#0d1433aa}
+.card small,.mute{color:var(--mute)}
+.tag{display:inline-block;font-size:12px;padding:1px 8px;border-radius:99px;border:1px solid var(--line)}
+.tag.demo{border-color:var(--purple);color:#cdb4ff}
+.sw{display:inline-block;width:11px;height:11px;border-radius:50%;margin-right:6px;background:var(--c)}
+#alert{position:fixed;top:64px;left:50%;transform:translateX(-50%);z-index:2000;width:min(460px,92vw);background:#2a0d1a;border:1px solid var(--red);border-radius:14px;padding:14px;box-shadow:0 0 30px #ff3b5c55;display:none}
+#alert.show{display:block}
+.dlg{background:#0d1433;color:var(--txt);border:1px solid var(--line);border-radius:16px;max-width:520px;width:92vw;padding:18px}
+.dlg::backdrop{background:#000a}
+.dlg label{display:block;margin:8px 0 3px;color:var(--mute);font-size:13px}
+.mob{display:none}
+.foot{font-size:12px;color:var(--mute)}
+@media(max-width:900px){main{grid-template-columns:1fr}.mob{display:inline-block}
+.side{position:fixed;left:0;right:0;bottom:0;max-height:62vh;z-index:1500;transform:translateY(105%);transition:transform .25s;border-top:1px solid var(--line);border-radius:18px 18px 0 0;background:#0d1433f2}
+.side.open{transform:none}}
+@media(prefers-reduced-motion:reduce){*{transition:none!important}}
+</style></head><body>
+<nav><span class="logo">SafeZone AI</span>
+<button id="nLive">Live Map</button><button id="nRep">Report Hazard</button><button id="nIns">Safety Insights</button><button id="nAbout">About</button>
+<button class="mob" id="mF">Filters</button><button class="mob" id="mN">Nearby</button></nav>
+<div id="alert" role="alert"></div>
+<div id="pickBar" style="display:none;position:fixed;top:64px;left:50%;transform:translateX(-50%);z-index:2100;background:#0d1433;border:1px solid var(--blue);border-radius:12px;padding:10px 14px">Click the map to choose the hazard location. <button class="btn alt" id="pickCancel">Cancel</button></div>
+<main>
+<aside class="side" id="left">
+ <input type="search" id="q" placeholder="Search a place" aria-label="Search a place">
+ <button class="btn alt" id="go">Search</button><div id="sMsg" class="foot" role="status"></div>
+ <button class="btn" id="loc">Use my location</button>
+ <button class="btn alt" id="sim">Simulate a drive (demo)</button>
+ <h3>Hazard types</h3>
+ <div id="types"></div>
+ <h3>Severity</h3><select id="fSev"><option value="">All</option><option>high</option><option>medium</option><option>low</option></select>
+ <h3>Verification</h3><select id="fVer"><option value="">All</option><option>verified</option><option>unverified</option></select>
+ <h3>Time range</h3><select id="fTime"><option value="0">Any time</option><option value="1">Last 24 hours</option><option value="7">Last 7 days</option><option value="30">Last 30 days</option></select>
+ <h3>Alert distance</h3><select id="thr"><option value="250">250 m</option><option value="500" selected>500 m</option><option value="1000">1 km</option></select>
+ <h3>Legend</h3>
+ <div><span class="sw" style="--c:var(--red)"></span>High priority report</div>
+ <div><span class="sw" style="--c:var(--orange)"></span>Moderate</div>
+ <div><span class="sw" style="--c:var(--yellow)"></span>Caution / lower</div>
+ <div><span class="sw" style="--c:var(--gray)"></span>Unverified or thin evidence</div>
+ <div><span class="sw" style="--c:var(--green)"></span>No known hazards in this dataset. This is not a guarantee of safety.</div>
+ <p class="foot">In an emergency, call your local emergency number now. Build 3. GPS accuracy varies and alerts may be delayed.</p>
+</aside>
+<div id="map" aria-label="Hazard map"></div>
+<aside class="side" id="right">
+ <h3 id="nbTitle">Nearby hazards</h3><div id="list"></div><div id="detail"></div>
+</aside></main>
+
+<dialog class="dlg" id="dRep"><h2>Report a hazard</h2>
+ <div style="display:flex;gap:6px;flex-wrap:wrap;margin:8px 0"><button class="btn alt" id="rPick">Pick on map</button><button class="btn alt" id="rCen">Use map centre</button><button class="btn alt" id="rMe">Use my location</button></div><p class="mute">Reports start as Unverified.</p>
+ <label>Category</label><select id="rType"><option>accident</option><option>crime</option><option>flood</option><option>fire</option><option>construction</option><option>other</option></select>
+ <label>Latitude / longitude (click the map)</label><input id="rLL" readonly>
+ <label>Description</label><textarea id="rDesc" rows="3" maxlength="500"></textarea>
+ <label>Severity</label><select id="rSev"><option>low</option><option selected>medium</option><option>high</option></select>
+ <label>Observed at</label><input type="datetime-local" id="rWhen">
+ <label>Source or evidence</label><input id="rSrc" maxlength="200" placeholder="e.g. saw it myself, local news link">
+ <p id="rMsg" class="mute"></p>
+ <button class="btn" id="rSend">Submit report</button> <button class="btn alt" id="rX">Close</button></dialog>
+<dialog class="dlg" id="dInfo"><div id="infoBody"></div><button class="btn alt" id="iX">Close</button></dialog>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+<script>
+const $=s=>document.querySelector(s);
+const COL={high:'#ff3b5c',medium:'#ff9f1c',low:'#ffd23f'},GRAY='#8b93a8';
+const ICON={accident:'🚗',crime:'🛡️',flood:'🌊',fire:'🔥',construction:'🚧',other:'⚠️'};
+const DEFAULT={lat:17.3850,lng:78.4867}; // configurable default city
+const DARK=[{elementType:'geometry',stylers:[{color:'#0b1230'}]},{elementType:'labels.text.fill',stylers:[{color:'#9aa6d6'}]},{elementType:'labels.text.stroke',stylers:[{color:'#070b1a'}]},{featureType:'road',elementType:'geometry',stylers:[{color:'#1b2a5e'}]},{featureType:'water',elementType:'geometry',stylers:[{color:'#06102e'}]},{featureType:'poi',stylers:[{visibility:'off'}]}];
+let feats=[],user=null,userMk=null,pick=null,pickMk=null,alerted={},simT=null,watchId=null,map=null,gm=[],gp=[];
+$('#types').innerHTML=Object.keys(ICON).map(t=>`<label class="chk"><input type="checkbox" class="ft" value="${t}" checked> ${ICON[t]} ${t}</label>`).join('');
+
+const color=p=>p.verification==='unverified'?GRAY:COL[p.severity];
+const ref=()=>{if(user)return user;if(map){const c=map.getCenter();return{lat:c.lat,lon:c.lng}}return{lat:DEFAULT.lat,lon:DEFAULT.lng}};
+function hav(a,b,c,d){const r=Math.PI/180,h=Math.sin((c-a)*r/2)**2+Math.cos(a*r)*Math.cos(c*r)*Math.sin((d-b)*r/2)**2;return 12742000*Math.asin(Math.sqrt(h))}
+function ring(g){return g.type==='Polygon'?g.coordinates[0]:[g.coordinates]}
+function cen(g){const r=ring(g);return g.type==='Point'?[g.coordinates[1],g.coordinates[0]]:[r.reduce((s,p)=>s+p[1],0)/r.length,r.reduce((s,p)=>s+p[0],0)/r.length]}
+function inside(lat,lon,g){if(g.type!=='Polygon')return false;const r=g.coordinates[0];let c=false;for(let i=0,j=r.length-1;i<r.length;j=i++){if((r[i][1]>lat)!==(r[j][1]>lat)&&lon<(r[j][0]-r[i][0])*(lat-r[i][1])/(r[j][1]-r[i][1])+r[i][0])c=!c}return c}
+function distTo(lat,lon,g){if(inside(lat,lon,g))return 0;return Math.min(...ring(g).map(p=>hav(lat,lon,p[1],p[0])))}
+function ago(s){const d=new Date(s);return isNaN(d)?s:d.toLocaleString()}
+function fly(lat,lng,z){if(!map)return;map.flyTo([lat,lng],z||map.getZoom())}
+function pin(c,e){return L.divIcon({className:'',html:`<div class="pin" style="--c:${c}">${e}</div>`,iconSize:[30,30]})}
+function visible(){
+ const types=[...document.querySelectorAll('.ft:checked')].map(x=>x.value),sev=$('#fSev').value,ver=$('#fVer').value,days=+$('#fTime').value;
+ return feats.filter(f=>{const p=f.properties;return types.includes(p.type)&&(!sev||p.severity===sev)&&(!ver||p.verification===ver)&&(!days||Date.now()-new Date(p.observed_at)<days*864e5)})}
+function render(){
+ const vis=visible();
+ if(map){gm.forEach(m=>m.remove());gp.forEach(m=>m.remove());gm=[];gp=[];
+  vis.forEach(f=>{const p=f.properties,c=color(p),[la,lo]=cen(f.geometry);
+   const mk=L.marker([la,lo],{icon:pin(c,ICON[p.type]),title:p.type}).addTo(map);mk.on('click',()=>show(f));gm.push(mk);
+   if(f.geometry.type==='Polygon'){const pg=L.polygon(f.geometry.coordinates[0].map(q=>[q[1],q[0]]),{color:c,fillColor:c,fillOpacity:.22,weight:2}).addTo(map);pg.on('click',()=>show(f));gp.push(pg)}})}
+ list(vis)}
+function list(vis){
+ const r=ref();$('#nbTitle').textContent=user?'Nearby hazards':'Hazards near map centre';
+ const rows=vis.map(f=>({f,d:Math.round(distTo(r.lat,r.lon,f.geometry))})).sort((a,b)=>a.d-b.d);
+ $('#list').innerHTML=rows.length?rows.map(({f,d})=>{const p=f.properties;return `<div class="card" tabindex="0" data-id="${p.id}" style="--c:${color(p)}"><b>${ICON[p.type]} ${p.type}</b> ${p.demo?'<span class="tag demo">DEMO</span>':''}<br><small>${p.severity} · ${p.verification} · ${d<1000?d+' m':(d/1000).toFixed(1)+' km'}</small></div>`}).join(''):'<p class="mute">No hazard data matches these filters. That does not mean the area is safe.</p>';
+ document.querySelectorAll('#list .card').forEach(c=>{const go=()=>show(feats.find(f=>f.properties.id===c.dataset.id));c.onclick=go;c.onkeydown=e=>e.key==='Enter'&&go()})}
+function show(f){const p=f.properties,[la,lo]=cen(f.geometry);fly(la,lo,Math.max(map?map.getZoom():15,15));
+ $('#detail').innerHTML=`<div class="card" style="--c:${color(p)};cursor:default;margin-top:10px"><h3 style="color:var(--txt)">${ICON[p.type]} ${p.type} ${p.demo?'<span class="tag demo">DEMO DATA</span>':''}</h3>
+ <p>${p.description}</p><p class="mute">Severity: ${p.severity}<br>Status: ${p.verification}<br>Observed: ${ago(p.observed_at)}<br>Source: ${p.source}<br>ID: ${p.id}<br>Prototype Risk Indicator: ${p.risk_indicator}/100 (not validated)</p>
+ <p><b>Precautions:</b> slow down, stay alert, consider another route if practical.</p>
+ ${p.demo?'':'<button class="btn alt" id="flagB">Flag as wrong or outdated</button>'}</div>`;
+ const fb=$('#flagB');if(fb)fb.onclick=async()=>{const r=await fetch(`/api/reports/${p.id}/flag`,{method:'POST'});fb.textContent=r.ok?'Flagged. Thank you.':'Could not flag'};
+ $('#right').classList.add('open')}
+async function load(){
+ try{const r=await fetch('/api/hazards');if(!r.ok)throw 0;feats=(await r.json()).features;render()}
+ catch{$('#list').innerHTML='<p class="mute">Cannot reach the backend. Start it with the command in README.md.</p>'}}
+
+// ---- geofencing ----
+function check(lat,lon){
+ const thr=+$('#thr').value;
+ visible().forEach(f=>{const p=f.properties,d=distTo(lat,lon,f.geometry),lvl=d===0?2:d<=thr?1:0,prev=alerted[p.id]||0;
+  if(lvl>prev){alerted[p.id]=lvl;fire(p,d,lvl)}
+  else if(lvl===0&&d>thr*1.3)delete alerted[p.id]})}
+function fire(p,d,lvl){
+ const el=$('#alert');el.innerHTML=`<b>⚠️ HAZARD ALERT</b><br>${lvl===2?'You are inside a mapped hazard zone.':`You are approaching a reported hazard about ${Math.round(d)} metres away.`}<br>
+ Hazard: ${p.type} ${p.demo?'(DEMO)':''}<br>Severity: ${p.severity} · ${p.verification}<br>Last reported: ${ago(p.observed_at)}<br>Source: ${p.source} (${p.id})<br>
+ <i>Reduce speed, stay alert, consider an alternative route when appropriate. GPS can be inaccurate and alerts may be delayed.</i> <button class="btn alt" id="aX">Dismiss</button>`;
+ el.classList.add('show');$('#aX').onclick=()=>el.classList.remove('show');
+ if(navigator.vibrate)navigator.vibrate(200)}
+function setUser(lat,lon){user={lat,lon};
+ if(map){if(!userMk)userMk=L.circleMarker([lat,lon],{radius:9,color:'#3d8bff',fillColor:'#9b5cff',fillOpacity:1}).addTo(map);userMk.setLatLng([lat,lon])}
+ check(lat,lon);list(visible())}
+$('#loc').onclick=()=>{
+ if(!navigator.geolocation){alert('Geolocation is not supported. You can still search and browse the map.');return}
+ navigator.geolocation.getCurrentPosition(p=>{fly(p.coords.latitude,p.coords.longitude,15);setUser(p.coords.latitude,p.coords.longitude);
+  if(watchId===null)watchId=navigator.geolocation.watchPosition(q=>setUser(q.coords.latitude,q.coords.longitude),()=>{},{enableHighAccuracy:true,maximumAge:5000})},
+  e=>alert('Location permission denied or unavailable. Use search and manual map navigation instead.'))};
+let routeLine=null;
+function stopSim(){if(simT){clearInterval(simT);simT=null}$('#sim').textContent='Simulate a drive (demo)'}
+$('#sim').onclick=async()=>{
+ if(simT){stopSim();return}
+ if(watchId!==null){navigator.geolocation.clearWatch(watchId);watchId=null}
+ alerted={};const btn=$('#sim');btn.textContent='Finding road route…';
+ const RC='78.4690,17.3850;78.4867,17.3850;78.5000,17.3955';
+ let pts=null;
+ for(const u of ['/api/route?coords='+encodeURIComponent(RC),'https://router.project-osrm.org/route/v1/driving/'+RC+'?overview=full&geometries=geojson']){
+  try{const r=await fetch(u);if(!r.ok)continue;const j=await r.json();const c=j.coordinates||(j.routes&&j.routes[0].geometry.coordinates);if(c){pts=c.map(x=>[x[1],x[0]]);break}}catch(e){}}
+ if(!pts){pts=[[17.3850,78.4690],[17.3850,78.4867],[17.3955,78.5000]];$('#sMsg').textContent='Road routing unavailable; using a straight demo path.'}
+ const path=[];for(let i=0;i<pts.length-1;i++){const p=pts[i],q=pts[i+1],n=Math.max(1,Math.ceil(hav(p[0],p[1],q[0],q[1])/15));for(let k=0;k<n;k++)path.push([p[0]+(q[0]-p[0])*k/n,p[1]+(q[1]-p[1])*k/n])}path.push(pts[pts.length-1]);
+ if(map){if(routeLine)routeLine.remove();routeLine=L.polyline(pts,{color:'#3d8bff',weight:4,opacity:.7}).addTo(map);map.fitBounds(routeLine.getBounds(),{padding:[40,40]})}
+ let i=0;btn.textContent='Stop simulation';
+ simT=setInterval(()=>{if(i>=path.length){stopSim();return}const p=path[i++];setUser(p[0],p[1]);if(map)map.panTo(p,{animate:false})},300)};
+['fSev','fVer','fTime'].forEach(i=>$('#'+i).onchange=render);document.querySelectorAll('.ft').forEach(c=>c.onchange=render);
+
+// ---- search ----
+async function geo(q){
+ try{const r=await fetch('/api/geocode?q='+encodeURIComponent(q));
+  if(r.ok)return await r.json();
+  if(r.status===404){const j=await r.json().catch(()=>({}));if(j.detail==='No match')return null}}catch(e){}
+ try{const j=await (await fetch('https://photon.komoot.io/api/?limit=1&q='+encodeURIComponent(q))).json();
+  if(j.features&&j.features.length){const c=j.features[0].geometry.coordinates,p=j.features[0].properties;return{lat:c[1],lon:c[0],name:[p.name,p.country].filter(Boolean).join(', ')}}return null}
+ catch(e){throw new Error('network')}}
+async function search(){
+ const q=$('#q').value.trim(),st=$('#sMsg');if(!q){st.textContent='Type a place name first.';return}
+ const m=q.match(/^(-?\d+(\.\d+)?)\s*[, ]\s*(-?\d+(\.\d+)?)$/);
+ if(m){fly(+m[1],+m[3],15);st.textContent='Moved to coordinates.';return}
+ st.textContent='Searching…';
+ try{const j=await geo(q);if(!j){st.textContent='No match. Try a city name or "lat, lon".';return}
+  fly(j.lat,j.lon,13);st.textContent='Found: '+(j.name||q).slice(0,60)}
+ catch(e){st.textContent='Search failed ('+e.message+'). Check your internet and that you opened localhost:8000.'}}
+$('#go').onclick=search;$('#q').onkeydown=e=>{if(e.key==='Enter')search()};
+
+// ---- reporting ----
+let picking=false;
+function setPick(la,lo){if(!map)return;pick={lat:la,lng:lo};if(pickMk)pickMk.remove();pickMk=L.marker([la,lo],{icon:pin('#3d8bff','📍')}).addTo(map);$('#rLL').value=la.toFixed(5)+', '+lo.toFixed(5)}
+function endPick(){picking=false;$('#pickBar').style.display='none';$('#map').style.cursor='';$('#dRep').showModal()}
+$('#rPick').onclick=()=>{$('#dRep').close();picking=true;$('#pickBar').style.display='block';$('#map').style.cursor='crosshair';$('#left').classList.remove('open');$('#right').classList.remove('open')};
+$('#pickCancel').onclick=endPick;
+$('#rCen').onclick=()=>{if(map){const c=map.getCenter();setPick(c.lat,c.lng)}};
+$('#rMe').onclick=()=>{if(user){setPick(user.lat,user.lon);return}
+ if(!navigator.geolocation){$('#rMsg').textContent='Location is not supported here.';return}
+ navigator.geolocation.getCurrentPosition(p=>{setPick(p.coords.latitude,p.coords.longitude);fly(p.coords.latitude,p.coords.longitude,16)},()=>{$('#rMsg').textContent='Location permission denied. Use Pick on map instead.'})};
+$('#nRep').onclick=()=>{$('#rWhen').value=new Date(Date.now()-new Date().getTimezoneOffset()*6e4).toISOString().slice(0,16);$('#rMsg').textContent='';$('#dRep').showModal()};
+$('#rX').onclick=()=>$('#dRep').close();
+$('#rSend').onclick=async()=>{
+ if(!pick){$('#rMsg').textContent='Choose a location first: use Pick on map, Use map centre or Use my location.';return}
+ const body={type:$('#rType').value,lat:pick.lat,lon:pick.lng,description:$('#rDesc').value,severity:$('#rSev').value,observed_at:new Date($('#rWhen').value).toISOString(),source:$('#rSrc').value||'User report'};
+ try{const r=await fetch('/api/hazards',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const j=await r.json();
+  if(!r.ok){$('#rMsg').textContent=typeof j.detail==='string'?j.detail:'Please check the fields (description needs 5+ characters).';return}
+  $('#rMsg').textContent='Saved as Unverified. A reviewer must approve it.';pick=null;if(pickMk)pickMk.remove();$('#rDesc').value='';load()}
+ catch{$('#rMsg').textContent='Cannot reach the backend.'}};
+
+// ---- insights / about ----
+function info(h){$('#infoBody').innerHTML=h;$('#dInfo').showModal()}
+$('#iX').onclick=()=>$('#dInfo').close();$('#nLive').onclick=()=>{$('#dInfo').close();$('#dRep').close()};
+$('#nAbout').onclick=()=>info('<h2>About SafeZone AI</h2><p>Hackathon prototype. Colours reflect documented reports, not guaranteed facts. Absence of reports is not evidence of safety. Demo hazards are fictional. This app is not an emergency service: in an emergency call your local emergency number.</p>');
+$('#nIns').onclick=async()=>{const r=ref();
+ const near=feats.map(f=>({p:f.properties,d:Math.round(distTo(r.lat,r.lon,f.geometry))})).filter(x=>x.d<=2000).sort((a,b)=>a.d-b.d);
+ const m='<p class="foot"><b>Prototype Risk Indicator</b> (0-100): severity 50%, verification 30%, recency 20%, minus 5 per flag. Unvalidated; not a prediction.</p>';
+ const local=near.length?'<h3>Reports within 2 km</h3>'+near.map(x=>`<p>${ICON[x.p.type]} <b>${x.p.type}</b>, ${x.p.severity}, ${x.p.verification}, ${x.d} m away, indicator ${x.p.risk_indicator}/100${x.p.demo?' (DEMO)':''}</p>`).join(''):'<p>Insufficient data to assess risk. No reports is not evidence of safety.</p>';
+ info('<h2>Safety insights</h2>'+local+(near.length?'<p id="aiBox" class="mute">AI analysis loading… (usually under 15 s)</p>':'')+m);
+ if(!near.length)return;
+ const ctl=new AbortController(),t=setTimeout(()=>ctl.abort(),25000);
+ try{const res=await fetch('/api/analyze',{method:'POST',signal:ctl.signal,headers:{'Content-Type':'application/json'},body:JSON.stringify({lat:r.lat,lon:r.lon,radius:2000})});const j=await res.json();
+  const box=$('#aiBox');if(!box)return;
+  box.className='';box.innerHTML=j.ai?`<span class="tag">${j.label}</span>`+Object.entries(j.analysis).map(([k,v])=>`<p><b>${k.replace(/_/g,' ')}:</b> ${(typeof v==='string'?v:JSON.stringify(v)).replace(/</g,'&lt;')}</p>`).join(''):`<p class="mute">${j.summary}</p>`}
+ catch{const box=$('#aiBox');if(box)box.textContent='AI is taking too long or is unavailable. The reports above are still accurate.'}
+ finally{clearTimeout(t)}};
+$('#mF').onclick=()=>{$('#right').classList.remove('open');$('#left').classList.toggle('open')};
+$('#mN').onclick=()=>{$('#left').classList.remove('open');$('#right').classList.toggle('open')};
+
+// ---- map boot (Leaflet, keyless basemaps) ----
+function mapMsg(t){$('#map').innerHTML='<p style="padding:20px;color:#ff9f1c">'+t+'</p>'}
+function initMap(){
+ if(typeof L==='undefined'){mapMsg('Map library failed to load. Check your internet or ad-blocker, then press Ctrl+F5.');return}
+ map=L.map('map').setView([DEFAULT.lat,DEFAULT.lng],14);
+ const att='&copy; OpenStreetMap contributors';
+ const base={'Standard (OSM)':L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:att}),
+  'Dark (OSM)':L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:att,className:'darktiles'}),
+  'Terrain (OpenTopoMap)':L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',{maxZoom:17,attribution:att+', SRTM, &copy; OpenTopoMap'}),
+  'Satellite (Esri)':L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:19,attribution:'Tiles &copy; Esri'})};
+ base['Dark (OSM)'].addTo(map);L.control.layers(base).addTo(map);
+ map.on('click',e=>{setPick(e.latlng.lat,e.latlng.lng);if(picking)endPick()});
+ map.on('moveend',()=>{if(!user)list(visible())});render()}
+initMap();load();
+</script></body></html>
